@@ -1,184 +1,109 @@
-name: Build Tizen Web App
+name: Build Tizen WGT
 
 on:
   push:
-    branches:
-      - main
-
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
   workflow_dispatch:
+
+env:
+  # Folder containing config.xml (use "." if it's the repo root)
+  APP_DIR: "."
+  TIZEN_STUDIO_VERSION: "5.6"
+  TIZEN_HOME: ${{ github.workspace }}/../tizen-studio
+  TIZEN_DATA: ${{ github.workspace }}/../tizen-studio-data
 
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-      # ============================================
-      # Checkout
-      # ============================================
+      - uses: actions/checkout@v4
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      # Optional: build your web assets first (remove if you have no build step)
+      # - uses: actions/setup-node@v4
+      #   with:
+      #     node-version: 20
+      # - run: npm ci && npm run build
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-      # ============================================
-      # Dependencies
-      # ============================================
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y zip unzip libxml2-utils
 
-      - name: Install dependencies
+      - name: Cache Tizen Studio CLI
+        id: cache-tizen
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TIZEN_HOME }}
+          key: tizen-studio-cli-${{ env.TIZEN_STUDIO_VERSION }}
+
+      - name: Install Tizen Studio CLI
+        if: steps.cache-tizen.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
+          VER="${TIZEN_STUDIO_VERSION}"
+          URL="https://download.tizen.org/sdk/Installer/tizen-studio_${VER}/web-cli_Tizen_Studio_${VER}_ubuntu-64.bin"
+          curl -fsSL "$URL" -o "$RUNNER_TEMP/tizen-installer.bin"
+          chmod +x "$RUNNER_TEMP/tizen-installer.bin"
+          "$RUNNER_TEMP/tizen-installer.bin" --accept-license "$TIZEN_HOME"
 
-          sudo apt-get install -y \
-            wget \
-            curl \
-            default-jre
-
-
-      # ============================================
-      # Download Tizen 10 Web CLI
-      # ============================================
-
-      - name: Download Tizen Web CLI
+      - name: Add Tizen CLI to PATH
         run: |
-          wget --progress=dot:giga \
-            -O "$RUNNER_TEMP/tizen-web-cli.bin" \
-            "https://download.tizen.org/sdk/Installer/tizen-sdk_10.0/web-cli_Tizen_SDK_10.0_ubuntu-64.bin"
+          echo "$TIZEN_HOME/tools/ide/bin" >> "$GITHUB_PATH"
+          echo "$TIZEN_HOME/tools" >> "$GITHUB_PATH"
 
-          chmod +x "$RUNNER_TEMP/tizen-web-cli.bin"
-
-          ls -lh "$RUNNER_TEMP/tizen-web-cli.bin"
-
-
-      # ============================================
-      # Install Tizen Web CLI
-      # ============================================
-
-      - name: Install Tizen Web CLI
+      # Uses your own author certificate if secrets are set,
+      # otherwise generates a throwaway one (fine for testing / sideloading
+      # on a TV in developer mode with a matching distributor cert).
+      - name: Create signing profile
+        env:
+          AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
+          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
         run: |
-          rm -rf "$HOME/tizen-studio"
-          rm -rf "$HOME/tizen-studio-data"
-
-          mkdir -p "$HOME/tizen-studio"
-
-          printf 'y\n' | "$RUNNER_TEMP/tizen-web-cli.bin" \
-            --accept-license \
-            --no-java-check \
-            --no-path-check \
-            --install-dir "$HOME/tizen-studio"
-
-
-      # ============================================
-      # Locate Tizen CLI
-      # ============================================
-
-      - name: Locate Tizen CLI
-        run: |
-          echo "Searching for Tizen CLI..."
-
-          find "$HOME/tizen-studio" \
-            -type f \
-            -name "tizen" \
-            -print
-
-          echo
-          echo "Searching for tizen.sh..."
-
-          find "$HOME/tizen-studio" \
-            -type f \
-            -name "tizen.sh" \
-            -print
-
-
-      # ============================================
-      # Configure PATH
-      # ============================================
-
-      - name: Configure Tizen PATH
-        run: |
-          TIZEN_BIN="$(
-            find "$HOME/tizen-studio" \
-              -type f \
-              -name "tizen" \
-              -print -quit
-          )"
-
-          if [ -z "$TIZEN_BIN" ]; then
-            echo "ERROR: Tizen executable was not found."
-
-            echo
-            echo "Installation tree:"
-            find "$HOME/tizen-studio" \
-              -maxdepth 8 \
-              -print 2>/dev/null
-
-            exit 1
+          mkdir -p "$TIZEN_DATA/keystore"
+          if [ -n "$AUTHOR_P12_BASE64" ]; then
+            echo "$AUTHOR_P12_BASE64" | base64 -d > "$TIZEN_DATA/keystore/author.p12"
+            PASS="$AUTHOR_PASSWORD"
+          else
+            PASS="ci-password-123"
+            tizen certificate \
+              -a CI -p "$PASS" -c US -ct NA -o CI -n CI -e ci@example.com \
+              -f author -- "$TIZEN_DATA/keystore"
           fi
+          tizen security-profiles add \
+            -n ci-profile \
+            -a "$TIZEN_DATA/keystore/author.p12" \
+            -p "$PASS"
+          # Make sure the password is stored in plain text for headless signing
+          tizen security-profiles list
 
-          echo "Found Tizen:"
-          echo "$TIZEN_BIN"
-
-          TIZEN_DIR="$(dirname "$TIZEN_BIN")"
-
-          echo "Adding to PATH:"
-          echo "$TIZEN_DIR"
-
-          echo "$TIZEN_DIR" >> "$GITHUB_PATH"
-
-
-      # ============================================
-      # Verify
-      # ============================================
-
-      - name: Verify Tizen CLI
-        run: |
-          which tizen
-          tizen version
-
-
-      # ============================================
-      # Build Web App
-      # ============================================
-
-      - name: Build Web App
-        run: |
-          tizen build-web \
-            -- .
-
-
-      # ============================================
-      # Package WGT
-      # ============================================
+      - name: Build web app
+        working-directory: ${{ env.APP_DIR }}
+        run: tizen build-web -- .
 
       - name: Package WGT
+        working-directory: ${{ env.APP_DIR }}
+        run: tizen package -t wgt -s ci-profile -- .buildResult
+
+      - name: Collect artifact
         run: |
-          tizen package \
-            -t wgt \
-            -- .buildResult
+          mkdir -p dist
+          cp "$APP_DIR"/.buildResult/*.wgt dist/
+          ls -la dist
 
-
-      # ============================================
-      # Find WGT
-      # ============================================
-
-      - name: Find WGT
-        run: |
-          echo "Generated WGT files:"
-
-          find . \
-            -type f \
-            -name "*.wgt" \
-            -print
-
-
-      # ============================================
-      # Upload WGT
-      # ============================================
-
-      - name: Upload WGT
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: tizen-wgt
-          path: |
-            .buildResult/*.wgt
-            *.wgt
+          path: dist/*.wgt
           if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.wgt
