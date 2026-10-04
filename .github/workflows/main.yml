@@ -52,15 +52,28 @@ jobs:
 
       - name: Create throwaway signing profile
         run: |
-          mkdir -p "$TIZEN_DATA/keystore"
+          mkdir -p "$TIZEN_DATA/keystore" "$TIZEN_DATA/profile"
           PASS="ci-password-123"
           tizen certificate \
             -a CI -p "$PASS" -c US -ct NA -o CI -n CI -e ci@example.com \
             -f author -- "$TIZEN_DATA/keystore"
-          tizen security-profiles add \
-            -n ci-profile \
-            -a "$TIZEN_DATA/keystore/author.p12" \
-            -p "$PASS"
+
+          DIST="$TIZEN_HOME/tools/certificate-generator/certificates/distributor"
+          ls -la "$TIZEN_DATA/keystore" "$DIST"
+
+          # Write the profile by hand with plaintext passwords (headless-safe)
+          cat > "$TIZEN_DATA/profile/profiles.xml" << XML
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <profiles active="ci-profile" version="3.1">
+          <profile name="ci-profile">
+          <profileitem ca="" distributor="0" key="$TIZEN_DATA/keystore/author.p12" password="$PASS" rootca=""/>
+          <profileitem ca="$DIST/tizen-distributor-ca.cer" distributor="1" key="$DIST/tizen-distributor-signer.p12" password="tizenpkcs12passfordsigner" rootca=""/>
+          <profileitem ca="" distributor="2" key="" password="" rootca=""/>
+          </profile>
+          </profiles>
+          XML
+          sed -i 's/^ *//' "$TIZEN_DATA/profile/profiles.xml"
+          tizen security-profiles list
 
       - name: Verify config.xml exists
         run: test -f "$APP_DIR/config.xml" || (echo "No config.xml in $APP_DIR" && ls -la && exit 1)
@@ -72,6 +85,10 @@ jobs:
       - name: Package WGT
         working-directory: ${{ env.APP_DIR }}
         run: tizen package -t wgt -s ci-profile -- .buildResult
+
+      - name: Dump Tizen CLI log on failure
+        if: failure()
+        run: cat "$TIZEN_DATA/cli/logs/cli.log" || true
 
       - name: Collect artifact
         run: |
