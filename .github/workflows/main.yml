@@ -1,0 +1,45 @@
+name: Build Tizen App
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install Tizen CLI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip wget default-jre
+
+      - name: Download Tizen CLI
+        run: |
+          wget -O tizen-cli.zip "https://download.tizen.org/sdk/Installer/tizen-studio_6.1/web-cli_Tizen_Studio_6.1_ubuntu-64.zip"
+          unzip -q tizen-cli.zip -d tizen-cli
+
+      - name: Locate Tizen CLI
+        run: |
+          find tizen-cli -type f -name tizen -o -name tizen-cli
+
+      - name: Build WGT
+        run: |
+          chmod +x ./tizen-cli/tools/ide/bin/tizen
+          ./tizen-cli/tools/ide/bin/tizen package \
+            -t wgt \
+            -- ./
+
+      - name: Find generated WGT
+        run: |
+          find . -name "*.wgt" -print
+
+      - name: Upload Tizen package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tizen-app
+          path: "**/*.wgt"
