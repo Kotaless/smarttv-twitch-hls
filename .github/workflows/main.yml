@@ -8,8 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Folder containing config.xml (use "." if it's the repo root)
-  APP_DIR: "."
+  APP_DIR: app
   TIZEN_STUDIO_VERSION: "5.6"
   TIZEN_HOME: ${{ github.workspace }}/../tizen-studio
   TIZEN_DATA: ${{ github.workspace }}/../tizen-studio-data
@@ -20,12 +19,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      # Optional: build your web assets first (remove if you have no build step)
-      # - uses: actions/setup-node@v4
-      #   with:
-      #     node-version: 20
-      # - run: npm ci && npm run build
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -57,30 +50,20 @@ jobs:
           echo "$TIZEN_HOME/tools/ide/bin" >> "$GITHUB_PATH"
           echo "$TIZEN_HOME/tools" >> "$GITHUB_PATH"
 
-      # Uses your own author certificate if secrets are set,
-      # otherwise generates a throwaway one (fine for testing / sideloading
-      # on a TV in developer mode with a matching distributor cert).
-      - name: Create signing profile
-        env:
-          AUTHOR_P12_BASE64: ${{ secrets.TIZEN_AUTHOR_P12_BASE64 }}
-          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+      - name: Create throwaway signing profile
         run: |
           mkdir -p "$TIZEN_DATA/keystore"
-          if [ -n "$AUTHOR_P12_BASE64" ]; then
-            echo "$AUTHOR_P12_BASE64" | base64 -d > "$TIZEN_DATA/keystore/author.p12"
-            PASS="$AUTHOR_PASSWORD"
-          else
-            PASS="ci-password-123"
-            tizen certificate \
-              -a CI -p "$PASS" -c US -ct NA -o CI -n CI -e ci@example.com \
-              -f author -- "$TIZEN_DATA/keystore"
-          fi
+          PASS="ci-password-123"
+          tizen certificate \
+            -a CI -p "$PASS" -c US -ct NA -o CI -n CI -e ci@example.com \
+            -f author -- "$TIZEN_DATA/keystore"
           tizen security-profiles add \
             -n ci-profile \
             -a "$TIZEN_DATA/keystore/author.p12" \
             -p "$PASS"
-          # Make sure the password is stored in plain text for headless signing
-          tizen security-profiles list
+
+      - name: Verify config.xml exists
+        run: test -f "$APP_DIR/config.xml" || (echo "No config.xml in $APP_DIR" && ls -la && exit 1)
 
       - name: Build web app
         working-directory: ${{ env.APP_DIR }}
