@@ -12,10 +12,20 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+
+      # ============================================
+      # Checkout
+      # ============================================
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+
+      # ============================================
+      # Dependencies
+      # ============================================
+
+      - name: Install dependencies
         run: |
           sudo apt-get update
 
@@ -26,9 +36,10 @@ jobs:
             default-jre \
             xvfb
 
-      # ==================================================
-      # Download Tizen 10 Web CLI
-      # ==================================================
+
+      # ============================================
+      # Download Tizen Web CLI 10
+      # ============================================
 
       - name: Download Tizen Web CLI
         run: |
@@ -40,45 +51,98 @@ jobs:
 
           ls -lh "$RUNNER_TEMP/tizen-web-cli.bin"
 
-      # ==================================================
-      # Install Tizen Web CLI
-      # ==================================================
 
-      - name: Test Tizen installer
+      # ============================================
+      # Extract the .bin
+      # ============================================
+
+      - name: Extract Tizen installer
         run: |
-          "$RUNNER_TEMP/tizen-web-cli.bin" --help || true
+          rm -rf "$RUNNER_TEMP/tizen-installer"
 
-          "$RUNNER_TEMP/tizen-web-cli.bin" \
+          mkdir -p "$RUNNER_TEMP/tizen-installer"
+
+          cd "$RUNNER_TEMP/tizen-installer"
+
+          "$RUNNER_TEMP/tizen-web-cli.bin"
+
+          echo "Installer contents:"
+          find . -maxdepth 4 -type f -print
+
+
+      # ============================================
+      # Find installer.sh
+      # ============================================
+
+      - name: Locate installer.sh
+        run: |
+          INSTALLER="$(
+            find "$RUNNER_TEMP/tizen-installer" \
+              -type f \
+              -name "installer.sh" \
+              -print -quit
+          )"
+
+          if [ -z "$INSTALLER" ]; then
+            echo "ERROR: installer.sh not found"
+
+            find "$RUNNER_TEMP/tizen-installer" \
+              -maxdepth 6 \
+              -print
+
+            exit 1
+          fi
+
+          echo "Installer:"
+          echo "$INSTALLER"
+
+          echo "TIZEN_INSTALLER=$INSTALLER" >> "$GITHUB_ENV"
+
+
+      # ============================================
+      # Install Tizen Web CLI
+      # ============================================
+
+      - name: Install Tizen Web CLI
+        run: |
+          chmod +x "$TIZEN_INSTALLER"
+
+          mkdir -p "$HOME/tizen-studio"
+
+          "$TIZEN_INSTALLER" \
             --accept-license \
             --no-java-check \
             --no-path-check \
-            --install-dir "$HOME/tizen-studio" \
-            || true
+            --install-dir "$HOME/tizen-studio"
 
-          echo "===== HOME ====="
-          find "$HOME" -maxdepth 4 -type f -name "tizen" -print
 
-          echo "===== TIZEN-STUDIO ====="
-          find "$HOME/tizen-studio" -maxdepth 6 -print 2>/dev/null | head -500
-
-      # ==================================================
-      # Locate Tizen CLI
-      # ==================================================
+      # ============================================
+      # Find installed Tizen CLI
+      # ============================================
 
       - name: Locate Tizen CLI
         run: |
-          echo "Searching for Tizen CLI..."
+          echo "Searching for tizen..."
 
           find "$HOME/tizen-studio" \
             -type f \
-            \( -name "tizen" -o -name "tizen.sh" \) \
+            -name "tizen" \
             -print
 
-      # ==================================================
-      # Configure PATH
-      # ==================================================
+          echo
+          echo "Searching entire HOME..."
 
-      - name: Configure Tizen CLI
+          find "$HOME" \
+            -type f \
+            -name "tizen" \
+            -print 2>/dev/null || true
+
+
+      # ============================================
+      # Configure PATH
+      # ============================================
+
+      - name: Configure Tizen PATH
         run: |
           TIZEN_BIN="$(
             find "$HOME/tizen-studio" \
@@ -88,41 +152,52 @@ jobs:
           )"
 
           if [ -z "$TIZEN_BIN" ]; then
-            echo "ERROR: Tizen executable not found."
+            echo "ERROR: Tizen executable was not found."
+
             echo
-            echo "Installed directory:"
-            find "$HOME/tizen-studio" -maxdepth 5 -print
+            echo "Tizen installation tree:"
+            find "$HOME/tizen-studio" \
+              -maxdepth 8 \
+              -print 2>/dev/null
+
             exit 1
           fi
 
-          echo "Found:"
+          echo "Tizen executable:"
           echo "$TIZEN_BIN"
 
           TIZEN_DIR="$(dirname "$TIZEN_BIN")"
 
+          echo "Tizen directory:"
+          echo "$TIZEN_DIR"
+
           echo "$TIZEN_DIR" >> "$GITHUB_PATH"
 
-      # ==================================================
-      # Verify
-      # ==================================================
 
-      - name: Verify Tizen
+      # ============================================
+      # Verify
+      # ============================================
+
+      - name: Verify Tizen CLI
         run: |
           which tizen
+
           tizen version
 
-      # ==================================================
-      # Build Web application
-      # ==================================================
 
-      - name: Build Web application
+      # ============================================
+      # Build Web application
+      # ============================================
+
+      - name: Build Web App
         run: |
           tizen build-web \
             -- .
 
-      # ==================================================
+
+      # ============================================
       # Package WGT
-      # ==================================================
+      # ============================================
 
       - name: Package WGT
         run: |
@@ -130,18 +205,24 @@ jobs:
             -t wgt \
             -- .buildResult
 
-      # ==================================================
-      # Show result
-      # ==================================================
 
-      - name: Show generated files
+      # ============================================
+      # Show generated WGT
+      # ============================================
+
+      - name: Find WGT
         run: |
-          echo "Generated files:"
-          find . -type f \( -name "*.wgt" -o -name "*.wgt.sign" \) -print
+          echo "Generated WGT files:"
 
-      # ==================================================
-      # Upload WGT
-      # ==================================================
+          find . \
+            -type f \
+            -name "*.wgt" \
+            -print
+
+
+      # ============================================
+      # Upload artifact
+      # ============================================
 
       - name: Upload WGT
         uses: actions/upload-artifact@v4
