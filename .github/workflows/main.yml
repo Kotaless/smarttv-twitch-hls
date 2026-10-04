@@ -44,17 +44,22 @@ jobs:
       # Install Tizen Web CLI
       # ==================================================
 
-      - name: Install Tizen Web CLI
+      - name: Test Tizen installer
         run: |
-          rm -rf "$HOME/tizen-studio"
-
-          mkdir -p "$HOME/tizen-studio"
+          "$RUNNER_TEMP/tizen-web-cli.bin" --help || true
 
           "$RUNNER_TEMP/tizen-web-cli.bin" \
             --accept-license \
             --no-java-check \
             --no-path-check \
-            --install-dir "$HOME/tizen-studio"
+            --install-dir "$HOME/tizen-studio" \
+            || true
+
+          echo "===== HOME ====="
+          find "$HOME" -maxdepth 4 -type f -name "tizen" -print
+
+          echo "===== TIZEN-STUDIO ====="
+          find "$HOME/tizen-studio" -maxdepth 6 -print 2>/dev/null | head -500
 
       # ==================================================
       # Locate Tizen CLI
