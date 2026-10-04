@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-
       # ============================================
       # Checkout
       # ============================================
@@ -32,13 +31,11 @@ jobs:
           sudo apt-get install -y \
             wget \
             curl \
-            unzip \
-            default-jre \
-            xvfb
+            default-jre
 
 
       # ============================================
-      # Download Tizen Web CLI 10
+      # Download Tizen 10 Web CLI
       # ============================================
 
       - name: Download Tizen Web CLI
@@ -53,63 +50,17 @@ jobs:
 
 
       # ============================================
-      # Extract the .bin
-      # ============================================
-
-      - name: Extract Tizen installer
-        run: |
-          rm -rf "$RUNNER_TEMP/tizen-installer"
-
-          mkdir -p "$RUNNER_TEMP/tizen-installer"
-
-          cd "$RUNNER_TEMP/tizen-installer"
-
-          "$RUNNER_TEMP/tizen-web-cli.bin"
-
-          echo "Installer contents:"
-          find . -maxdepth 4 -type f -print
-
-
-      # ============================================
-      # Find installer.sh
-      # ============================================
-
-      - name: Locate installer.sh
-        run: |
-          INSTALLER="$(
-            find "$RUNNER_TEMP/tizen-installer" \
-              -type f \
-              -name "installer.sh" \
-              -print -quit
-          )"
-
-          if [ -z "$INSTALLER" ]; then
-            echo "ERROR: installer.sh not found"
-
-            find "$RUNNER_TEMP/tizen-installer" \
-              -maxdepth 6 \
-              -print
-
-            exit 1
-          fi
-
-          echo "Installer:"
-          echo "$INSTALLER"
-
-          echo "TIZEN_INSTALLER=$INSTALLER" >> "$GITHUB_ENV"
-
-
-      # ============================================
       # Install Tizen Web CLI
       # ============================================
 
       - name: Install Tizen Web CLI
         run: |
-          chmod +x "$TIZEN_INSTALLER"
+          rm -rf "$HOME/tizen-studio"
+          rm -rf "$HOME/tizen-studio-data"
 
           mkdir -p "$HOME/tizen-studio"
 
-          "$TIZEN_INSTALLER" \
+          printf 'y\n' | "$RUNNER_TEMP/tizen-web-cli.bin" \
             --accept-license \
             --no-java-check \
             --no-path-check \
@@ -117,12 +68,12 @@ jobs:
 
 
       # ============================================
-      # Find installed Tizen CLI
+      # Locate Tizen CLI
       # ============================================
 
       - name: Locate Tizen CLI
         run: |
-          echo "Searching for tizen..."
+          echo "Searching for Tizen CLI..."
 
           find "$HOME/tizen-studio" \
             -type f \
@@ -130,12 +81,12 @@ jobs:
             -print
 
           echo
-          echo "Searching entire HOME..."
+          echo "Searching for tizen.sh..."
 
-          find "$HOME" \
+          find "$HOME/tizen-studio" \
             -type f \
-            -name "tizen" \
-            -print 2>/dev/null || true
+            -name "tizen.sh" \
+            -print
 
 
       # ============================================
@@ -155,7 +106,7 @@ jobs:
             echo "ERROR: Tizen executable was not found."
 
             echo
-            echo "Tizen installation tree:"
+            echo "Installation tree:"
             find "$HOME/tizen-studio" \
               -maxdepth 8 \
               -print 2>/dev/null
@@ -163,12 +114,12 @@ jobs:
             exit 1
           fi
 
-          echo "Tizen executable:"
+          echo "Found Tizen:"
           echo "$TIZEN_BIN"
 
           TIZEN_DIR="$(dirname "$TIZEN_BIN")"
 
-          echo "Tizen directory:"
+          echo "Adding to PATH:"
           echo "$TIZEN_DIR"
 
           echo "$TIZEN_DIR" >> "$GITHUB_PATH"
@@ -181,12 +132,11 @@ jobs:
       - name: Verify Tizen CLI
         run: |
           which tizen
-
           tizen version
 
 
       # ============================================
-      # Build Web application
+      # Build Web App
       # ============================================
 
       - name: Build Web App
@@ -207,7 +157,7 @@ jobs:
 
 
       # ============================================
-      # Show generated WGT
+      # Find WGT
       # ============================================
 
       - name: Find WGT
@@ -221,7 +171,7 @@ jobs:
 
 
       # ============================================
-      # Upload artifact
+      # Upload WGT
       # ============================================
 
       - name: Upload WGT
