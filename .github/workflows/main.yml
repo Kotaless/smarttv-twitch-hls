@@ -1,8 +1,11 @@
-name: Build Tizen App
+```yaml
+name: Build Tizen Web App
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+
   workflow_dispatch:
 
 jobs:
@@ -10,47 +13,98 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      # --------------------------------------------------
+      # 1. Checkout your Tizen project
+      # --------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # --------------------------------------------------
+      # 2. Install dependencies
+      # --------------------------------------------------
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget unzip default-jre
+          sudo apt-get install -y \
+            wget \
+            unzip \
+            curl \
+            default-jre
 
-      - name: Download Tizen Studio Web CLI
+      # --------------------------------------------------
+      # 3. Download Tizen Web CLI 10.0
+      # --------------------------------------------------
+      - name: Download Tizen Web CLI
         run: |
-          wget -O tizen-cli.bin \
-            "https://download.tizen.org/sdk/Installer/tizen-studio_6.1/web-cli_Tizen_Studio_6.1_ubuntu-64.bin"
+          wget -O tizen-web-cli.bin \
+            "https://download.tizen.org/sdk/Installer/tizen-sdk_10.0/web-cli_Tizen_SDK_10.0_ubuntu-64.bin"
 
-          chmod +x tizen-cli.bin
+          chmod +x tizen-web-cli.bin
 
-      - name: Install Tizen Studio Web CLI
+      # --------------------------------------------------
+      # 4. Install Tizen Web CLI
+      # --------------------------------------------------
+      - name: Install Tizen Web CLI
         run: |
-          ./tizen-cli.bin \
+          mkdir -p "$HOME/tizen-studio"
+
+          ./tizen-web-cli.bin \
             --accept-license \
             --no-java-check \
             --no-path-check \
             --install-dir "$HOME/tizen-studio"
 
-      - name: Show installation
+      # --------------------------------------------------
+      # 5. Add Tizen CLI to PATH
+      # --------------------------------------------------
+      - name: Configure Tizen CLI
         run: |
-          find "$HOME/tizen-studio" -maxdepth 4 -type f \
-            \( -name "tizen" -o -name "package-manager" \) \
-            -print
+          echo "$HOME/tizen-studio/tools/ide/bin" >> "$GITHUB_PATH"
+          echo "$HOME/tizen-studio/tools" >> "$GITHUB_PATH"
 
-      - name: Build Tizen WGT
+      # --------------------------------------------------
+      # 6. Verify installation
+      # --------------------------------------------------
+      - name: Verify Tizen CLI
         run: |
-          "$HOME/tizen-studio/tools/ide/bin/tizen" package \
+          which tizen
+          tizen version
+
+      # --------------------------------------------------
+      # 7. Build Web App
+      # --------------------------------------------------
+      - name: Build Tizen Web App
+        run: |
+          tizen build-web \
+            -- ./
+
+      # --------------------------------------------------
+      # 8. Package as WGT
+      #
+      # No certificate profile is specified here.
+      # --------------------------------------------------
+      - name: Package WGT
+        run: |
+          tizen package \
             -t wgt \
-            -- .
+            -- ./.buildResult
 
+      # --------------------------------------------------
+      # 9. Show generated files
+      # --------------------------------------------------
       - name: Find WGT
         run: |
           find . -type f -name "*.wgt" -print
 
+      # --------------------------------------------------
+      # 10. Upload WGT as GitHub Actions artifact
+      # --------------------------------------------------
       - name: Upload WGT
         uses: actions/upload-artifact@v4
         with:
-          name: tizen-app
-          path: "**/*.wgt"
+          name: tizen-wgt
+          path: |
+            .buildResult/*.wgt
+            *.wgt
+          if-no-files-found: error
+```
